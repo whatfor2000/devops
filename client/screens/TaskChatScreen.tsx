@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   StyleSheet,
@@ -7,6 +7,7 @@ import {
   Pressable,
   Alert,
   Platform,
+  Linking,
 } from "react-native";
 import { useRoute, RouteProp, useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -36,6 +37,7 @@ export default function TaskChatScreen() {
   const flatListRef = useRef<FlatList>(null);
 
   const [message, setMessage] = useState("");
+  const [permission, requestPermission] = ImagePicker.useMediaLibraryPermissions();
 
   React.useLayoutEffect(() => {
     navigation.setOptions({
@@ -67,7 +69,7 @@ export default function TaskChatScreen() {
   const uploadMutation = useMutation({
     mutationFn: async (uri: string) => {
       const formData = new FormData();
-      const filename = uri.split("/").pop() || "file";
+      const filename = uri.split("/").pop() || "file.jpg";
       const match = /\.(\w+)$/.exec(filename);
       const type = match ? `image/${match[1]}` : "image/jpeg";
 
@@ -77,10 +79,10 @@ export default function TaskChatScreen() {
         formData.append("file", blob, filename);
       } else {
         formData.append("file", {
-          uri,
+          uri: uri,
           name: filename,
-          type,
-        } as any);
+          type: type,
+        } as unknown as Blob);
       }
 
       const res = await apiRequestFormData(
@@ -105,6 +107,37 @@ export default function TaskChatScreen() {
   };
 
   const handleAttach = async () => {
+    if (!permission || !permission.granted) {
+      if (permission && permission.status === "denied" && !permission.canAskAgain) {
+        Alert.alert(
+          "Permission Required",
+          "Photo library access is required to upload attachments. Please enable it in Settings.",
+          [
+            { text: "Cancel", style: "cancel" },
+            ...(Platform.OS !== "web"
+              ? [
+                  {
+                    text: "Open Settings",
+                    onPress: async () => {
+                      try {
+                        await Linking.openSettings();
+                      } catch (error) {
+                      }
+                    },
+                  },
+                ]
+              : []),
+          ]
+        );
+        return;
+      }
+
+      const result = await requestPermission();
+      if (!result.granted) {
+        return;
+      }
+    }
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       quality: 0.8,
@@ -127,13 +160,13 @@ export default function TaskChatScreen() {
           isOwnMessage && styles.messageRowOwn,
         ]}
       >
-        {!isOwnMessage && (
+        {!isOwnMessage ? (
           <Avatar
             name={item.user?.displayName || item.user?.username}
             url={item.user?.avatarUrl}
             size={32}
           />
-        )}
+        ) : null}
         <View
           style={[
             styles.messageBubble,
@@ -142,11 +175,11 @@ export default function TaskChatScreen() {
             },
           ]}
         >
-          {!isOwnMessage && (
+          {!isOwnMessage ? (
             <ThemedText type="caption" style={styles.messageSender}>
               {item.user?.displayName || item.user?.username}
             </ThemedText>
-          )}
+          ) : null}
           <ThemedText
             type="body"
             style={{ color: isOwnMessage ? "#FFFFFF" : theme.text }}
